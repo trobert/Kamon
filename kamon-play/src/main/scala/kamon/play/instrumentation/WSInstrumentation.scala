@@ -18,11 +18,11 @@ package kamon.play.instrumentation
 
 import kamon.Kamon
 import kamon.play.Play
-import kamon.trace.{ SegmentCategory, TraceRecorder }
+import kamon.trace.{ Tracer, SegmentCategory }
+import kamon.util.SameThreadExecutionContext
 import org.aspectj.lang.ProceedingJoinPoint
 import org.aspectj.lang.annotation.{ Around, Aspect, Pointcut }
 import play.api.libs.ws.{ WSRequest, WSResponse }
-
 import scala.concurrent.Future
 
 @Aspect
@@ -33,14 +33,13 @@ class WSInstrumentation {
 
   @Around("onExecuteRequest(request)")
   def aroundExecuteRequest(pjp: ProceedingJoinPoint, request: WSRequest): Any = {
-    TraceRecorder.withTraceContextAndSystem { (ctx, system) ⇒
-      val playExtension = Kamon(Play)(system)
-      val executor = playExtension.defaultDispatcher
+    Tracer.currentContext.collect { ctx ⇒
+      val playExtension = Kamon(Play)
       val segmentName = playExtension.generateHttpClientSegmentName(request)
       val segment = ctx.startSegment(segmentName, SegmentCategory.HttpClient, Play.SegmentLibraryName)
       val response = pjp.proceed().asInstanceOf[Future[WSResponse]]
 
-      response.map(result ⇒ segment.finish())(executor)
+      response.map(result ⇒ segment.finish())(SameThreadExecutionContext)
       response
     } getOrElse pjp.proceed()
   }

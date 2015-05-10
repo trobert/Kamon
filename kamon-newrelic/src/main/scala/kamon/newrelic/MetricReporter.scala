@@ -1,14 +1,12 @@
 package kamon.newrelic
 
-import java.util.concurrent.TimeUnit
-
 import akka.actor.{ Props, ActorLogging, Actor }
 import akka.pattern.pipe
 import akka.io.IO
 import kamon.Kamon
-import kamon.metric.Subscriptions.TickMetricSnapshot
-import kamon.metric.UserMetrics.{ UserGauges, UserMinMaxCounters, UserCounters, UserHistograms }
+import kamon.metric.SubscriptionsDispatcher.TickMetricSnapshot
 import kamon.metric._
+import kamon.metric.instrument.CollectionContext
 import kamon.newrelic.ApiMethodClient.{ AgentShutdownRequiredException, AgentRestartRequiredException }
 import kamon.newrelic.MetricReporter.{ PostFailed, PostSucceeded }
 import spray.can.Http
@@ -19,13 +17,13 @@ import JsonProtocol._
 class MetricReporter(settings: AgentSettings) extends Actor with ActorLogging with SprayJsonSupport {
   import context.dispatcher
 
-  val metricsExtension = Kamon(Metrics)(context.system)
+  val metricsExtension = Kamon.metrics
   val collectionContext = metricsExtension.buildDefaultCollectionContext
   val metricsSubscriber = {
-    val tickInterval = context.system.settings.config.getDuration("kamon.metrics.tick-interval", TimeUnit.MILLISECONDS)
+    val tickInterval = Kamon.metrics.settings.tickInterval
 
     // Metrics are always sent to New Relic in 60 seconds intervals.
-    if (tickInterval == 60000) self
+    if (tickInterval == 60.seconds) self
     else context.actorOf(TickMetricSnapshotBuffer.props(1 minute, self), "metric-buffer")
   }
 
@@ -91,14 +89,9 @@ class MetricReporter(settings: AgentSettings) extends Actor with ActorLogging wi
   }
 
   def subscribeToMetrics(): Unit = {
-    // Subscribe to Trace Metrics
-    metricsExtension.subscribe(TraceMetrics, "*", metricsSubscriber, permanently = true)
-
-    // Subscribe to all User Metrics
-    metricsExtension.subscribe(UserHistograms, "*", metricsSubscriber, permanently = true)
-    metricsExtension.subscribe(UserCounters, "*", metricsSubscriber, permanently = true)
-    metricsExtension.subscribe(UserMinMaxCounters, "*", metricsSubscriber, permanently = true)
-    metricsExtension.subscribe(UserGauges, "*", metricsSubscriber, permanently = true)
+    metricsExtension.subscribe("trace", "*", metricsSubscriber, permanently = true)
+    metricsExtension.subscribe("trace-segment", "*", metricsSubscriber, permanently = true)
+    metricsExtension.subscribe("user-metrics", "*", metricsSubscriber, permanently = true)
   }
 }
 
@@ -113,5 +106,5 @@ object MetricReporter {
 }
 
 trait MetricExtractor {
-  def extract(settings: AgentSettings, collectionContext: CollectionContext, metrics: Map[MetricGroupIdentity, MetricGroupSnapshot]): Map[MetricID, MetricData]
+  def extract(settings: AgentSettings, collectionContext: CollectionContext, metrics: Map[Entity, EntitySnapshot]): Map[MetricID, MetricData]
 }

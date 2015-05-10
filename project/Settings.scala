@@ -13,6 +13,7 @@
  * =========================================================================================
  */
 
+import sbt.Tests.{SubProcess, Group}
 import sbt._
 import Keys._
 import com.typesafe.sbt.SbtScalariform
@@ -25,21 +26,18 @@ import net.virtualvoid.sbt.graph.Plugin.graphSettings
 object Settings {
 
   val JavaVersion = "1.6"
+  val ScalaVersion = "2.11.5"
 
-  val ScalaVersion = "2.10.4"
-  
   lazy val basicSettings = Seq(
-    scalaVersion  := ScalaVersion,
-    resolvers    ++= Dependencies.resolutionRepos,
-    fork in run   := true,
-    javacOptions in compile := Seq(
+    crossScalaVersions      := Seq("2.10.5", "2.11.6"),
+    resolvers              ++= Dependencies.resolutionRepos,
+    fork in run             := true,
+    parallelExecution in Test := false,
+    testGrouping in Test    := singleTestPerJvm((definedTests in Test).value, (javaOptions in Test).value),
+    javacOptions            := Seq(
       "-Xlint:-options",
-      "-source", JavaVersion, "-target", JavaVersion
-    ),
-    javacOptions in doc  := Seq(
-      "-source", JavaVersion
-    ),
-    scalacOptions := Seq(
+      "-source", JavaVersion, "-target", JavaVersion),
+    scalacOptions           := Seq(
       "-encoding",
       "utf8",
       "-g:vars",
@@ -53,6 +51,15 @@ object Settings {
       "-Yinline-warnings",
       "-Xlog-reflective-calls"
     )) ++ publishSettings ++ releaseSettings ++ graphSettings
+
+
+  def singleTestPerJvm(tests: Seq[TestDefinition], jvmSettings: Seq[String]): Seq[Group] =
+    tests map { test =>
+      new Group(
+        name = test.name,
+        tests = Seq(test),
+        runPolicy = SubProcess(ForkOptions(runJVMOptions = jvmSettings)))
+    }
 
   lazy val formatSettings = SbtScalariform.scalariformSettings ++ Seq(
     ScalariformKeys.preferences in Compile := formattingPreferences,

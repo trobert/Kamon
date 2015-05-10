@@ -1,6 +1,6 @@
 /*
  * =========================================================================================
- * Copyright © 2013-2014 the kamon project <http://kamon.io/>
+ * Copyright © 2013-2015 the kamon project <http://kamon.io/>
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
  * except in compliance with the License. You may obtain a copy of the License at
@@ -19,58 +19,33 @@ package kamon.logreporter
 import akka.actor._
 import akka.event.Logging
 import kamon.Kamon
-import kamon.metric.ActorMetrics.ActorMetricSnapshot
-import kamon.metric.Subscriptions.TickMetricSnapshot
-import kamon.metric.TraceMetrics.TraceMetricsSnapshot
-import kamon.metric.UserMetrics._
+import kamon.metric.SubscriptionsDispatcher.TickMetricSnapshot
 import kamon.metric._
 import kamon.metric.instrument.{ Counter, Histogram }
-import kamon.metrics.ContextSwitchesMetrics.ContextSwitchesMetricsSnapshot
-import kamon.metrics.NetworkMetrics.NetworkMetricSnapshot
-import kamon.metrics.ProcessCPUMetrics.ProcessCPUMetricsSnapshot
-import kamon.metrics._
-import kamon.metrics.CPUMetrics.CPUMetricSnapshot
 
 object LogReporter extends ExtensionId[LogReporterExtension] with ExtensionIdProvider {
   override def lookup(): ExtensionId[_ <: Extension] = LogReporter
   override def createExtension(system: ExtendedActorSystem): LogReporterExtension = new LogReporterExtension(system)
-
-  trait MetricKeyGenerator {
-    def localhostName: String
-    def normalizedLocalhostName: String
-    def generateKey(groupIdentity: MetricGroupIdentity, metricIdentity: MetricIdentity): String
-  }
 }
 
 class LogReporterExtension(system: ExtendedActorSystem) extends Kamon.Extension {
   val log = Logging(system, classOf[LogReporterExtension])
   log.info("Starting the Kamon(LogReporter) extension")
 
-  val logReporterConfig = system.settings.config.getConfig("kamon.log-reporter")
-
   val subscriber = system.actorOf(Props[LogReporterSubscriber], "kamon-log-reporter")
-  Kamon(Metrics)(system).subscribe(TraceMetrics, "*", subscriber, permanently = true)
-  Kamon(Metrics)(system).subscribe(ActorMetrics, "*", subscriber, permanently = true)
 
-  // Subscribe to all user metrics
-  Kamon(Metrics)(system).subscribe(UserHistograms, "*", subscriber, permanently = true)
-  Kamon(Metrics)(system).subscribe(UserCounters, "*", subscriber, permanently = true)
-  Kamon(Metrics)(system).subscribe(UserMinMaxCounters, "*", subscriber, permanently = true)
-  Kamon(Metrics)(system).subscribe(UserGauges, "*", subscriber, permanently = true)
-
-  val includeSystemMetrics = logReporterConfig.getBoolean("report-system-metrics")
-
-  if (includeSystemMetrics) {
-    // Subscribe to SystemMetrics
-    Kamon(Metrics)(system).subscribe(CPUMetrics, "*", subscriber, permanently = true)
-    Kamon(Metrics)(system).subscribe(ProcessCPUMetrics, "*", subscriber, permanently = true)
-    Kamon(Metrics)(system).subscribe(NetworkMetrics, "*", subscriber, permanently = true)
-    Kamon(Metrics)(system).subscribe(ContextSwitchesMetrics, "*", subscriber, permanently = true)
-  }
-
+  Kamon.metrics.subscribe("trace", "**", subscriber, permanently = true)
+  Kamon.metrics.subscribe("akka-actor", "**", subscriber, permanently = true)
+  Kamon.metrics.subscribe("akka-dispatcher", "**", subscriber, permanently = true)
+  Kamon.metrics.subscribe("counter", "**", subscriber, permanently = true)
+  Kamon.metrics.subscribe("histogram", "**", subscriber, permanently = true)
+  Kamon.metrics.subscribe("min-max-counter", "**", subscriber, permanently = true)
+  Kamon.metrics.subscribe("gauge", "**", subscriber, permanently = true)
+  Kamon.metrics.subscribe("system-metric", "**", subscriber, permanently = true)
 }
 
 class LogReporterSubscriber extends Actor with ActorLogging {
+
   import kamon.logreporter.LogReporterSubscriber.RichHistogramSnapshot
 
   def receive = {
@@ -79,31 +54,36 @@ class LogReporterSubscriber extends Actor with ActorLogging {
 
   def printMetricSnapshot(tick: TickMetricSnapshot): Unit = {
     // Group all the user metrics together.
-    val histograms = Map.newBuilder[MetricGroupIdentity, Histogram.Snapshot]
-    val counters = Map.newBuilder[MetricGroupIdentity, Counter.Snapshot]
-    val minMaxCounters = Map.newBuilder[MetricGroupIdentity, Histogram.Snapshot]
-    val gauges = Map.newBuilder[MetricGroupIdentity, Histogram.Snapshot]
+    val histograms = Map.newBuilder[String, Option[Histogram.Snapshot]]
+    val counters = Map.newBuilder[String, Option[Counter.Snapshot]]
+    val minMaxCounters = Map.newBuilder[String, Option[Histogram.Snapshot]]
+    val gauges = Map.newBuilder[String, Option[Histogram.Snapshot]]
 
     tick.metrics foreach {
-      case (identity, ams: ActorMetricSnapshot)                 ⇒ logActorMetrics(identity.name, ams)
-      case (identity, tms: TraceMetricsSnapshot)                ⇒ logTraceMetrics(identity.name, tms)
-      case (h: UserHistogram, s: UserHistogramSnapshot)         ⇒ histograms += (h -> s.histogramSnapshot)
-      case (c: UserCounter, s: UserCounterSnapshot)             ⇒ counters += (c -> s.counterSnapshot)
-      case (m: UserMinMaxCounter, s: UserMinMaxCounterSnapshot) ⇒ minMaxCounters += (m -> s.minMaxCounterSnapshot)
-      case (g: UserGauge, s: UserGaugeSnapshot)                 ⇒ gauges += (g -> s.gaugeSnapshot)
-      case (_, cms: CPUMetricSnapshot)                          ⇒ logCpuMetrics(cms)
-      case (_, pcms: ProcessCPUMetricsSnapshot)                 ⇒ logProcessCpuMetrics(pcms)
-      case (_, nms: NetworkMetricSnapshot)                      ⇒ logNetworkMetrics(nms)
-      case (_, csms: ContextSwitchesMetricsSnapshot)            ⇒ logContextSwitchesMetrics(csms)
-      case ignoreEverythingElse                                 ⇒
+      case (entity, snapshot) if entity.category == "akka-actor"      ⇒ logActorMetrics(entity.name, snapshot)
+      case (entity, snapshot) if entity.category == "akka-dispatcher" ⇒ logDispatcherMetrics(entity, snapshot)
+      case (entity, snapshot) if entity.category == "trace"           ⇒ logTraceMetrics(entity.name, snapshot)
+      case (entity, snapshot) if entity.category == "histogram"       ⇒ histograms += (entity.name -> snapshot.histogram("histogram"))
+      case (entity, snapshot) if entity.category == "counter"         ⇒ counters += (entity.name -> snapshot.counter("counter"))
+      case (entity, snapshot) if entity.category == "min-max-counter" ⇒ minMaxCounters += (entity.name -> snapshot.minMaxCounter("min-max-counter"))
+      case (entity, snapshot) if entity.category == "gauge"           ⇒ gauges += (entity.name -> snapshot.gauge("gauge"))
+      case (entity, snapshot) if entity.category == "system-metric"   ⇒ logSystemMetrics(entity.name, snapshot)
+      case ignoreEverythingElse                                       ⇒
     }
 
-    logUserMetrics(histograms.result(), counters.result(), minMaxCounters.result(), gauges.result())
+    logMetrics(histograms.result(), counters.result(), minMaxCounters.result(), gauges.result())
   }
 
-  def logActorMetrics(name: String, ams: ActorMetricSnapshot): Unit = {
-    log.info(
-      """
+  def logActorMetrics(name: String, actorSnapshot: EntitySnapshot): Unit = {
+    for {
+      processingTime ← actorSnapshot.histogram("processing-time")
+      timeInMailbox ← actorSnapshot.histogram("time-in-mailbox")
+      mailboxSize ← actorSnapshot.minMaxCounter("mailbox-size")
+      errors ← actorSnapshot.counter("errors")
+    } {
+
+      log.info(
+        """
         |+--------------------------------------------------------------------------------------------------+
         ||                                                                                                  |
         ||    Actor: %-83s    |
@@ -119,46 +99,140 @@ class LogReporterSubscriber extends Actor with ActorLogging {
         ||          Max: %-12s                     Max: %-12s                                 |
         ||                                                                                                  |
         |+--------------------------------------------------------------------------------------------------+"""
-        .stripMargin.format(
-          name,
-          ams.processingTime.numberOfMeasurements, ams.timeInMailbox.numberOfMeasurements, ams.mailboxSize.min,
-          ams.processingTime.min, ams.timeInMailbox.min, ams.mailboxSize.average,
-          ams.processingTime.percentile(50.0D), ams.timeInMailbox.percentile(50.0D), ams.mailboxSize.max,
-          ams.processingTime.percentile(90.0D), ams.timeInMailbox.percentile(90.0D),
-          ams.processingTime.percentile(95.0D), ams.timeInMailbox.percentile(95.0D),
-          ams.processingTime.percentile(99.0D), ams.timeInMailbox.percentile(99.0D), ams.errors.count,
-          ams.processingTime.percentile(99.9D), ams.timeInMailbox.percentile(99.9D),
-          ams.processingTime.max, ams.timeInMailbox.max))
+          .stripMargin.format(
+            name,
+            processingTime.numberOfMeasurements, timeInMailbox.numberOfMeasurements, mailboxSize.min,
+            processingTime.min, timeInMailbox.min, mailboxSize.average,
+            processingTime.percentile(50.0D), timeInMailbox.percentile(50.0D), mailboxSize.max,
+            processingTime.percentile(90.0D), timeInMailbox.percentile(90.0D),
+            processingTime.percentile(95.0D), timeInMailbox.percentile(95.0D),
+            processingTime.percentile(99.0D), timeInMailbox.percentile(99.0D), errors.count,
+            processingTime.percentile(99.9D), timeInMailbox.percentile(99.9D),
+            processingTime.max, timeInMailbox.max))
+    }
+
   }
 
-  def logCpuMetrics(cms: CPUMetricSnapshot): Unit = {
-    import cms._
+  def logDispatcherMetrics(entity: Entity, snapshot: EntitySnapshot): Unit = entity.tags.get("dispatcher-type") match {
+    case Some("fork-join-pool")       ⇒ logForkJoinPool(entity.name, snapshot)
+    case Some("thread-pool-executor") ⇒ logThreadPoolExecutor(entity.name, snapshot)
+    case ignoreOthers                 ⇒
+  }
 
-    log.info(
-      """
+  def logForkJoinPool(name: String, forkJoinMetrics: EntitySnapshot): Unit = {
+    for {
+      paralellism ← forkJoinMetrics.minMaxCounter("parallelism")
+      poolSize ← forkJoinMetrics.gauge("pool-size")
+      activeThreads ← forkJoinMetrics.gauge("active-threads")
+      runningThreads ← forkJoinMetrics.gauge("running-threads")
+      queuedTaskCount ← forkJoinMetrics.gauge("queued-task-count")
+
+    } {
+      log.info(
+        """
+          |+--------------------------------------------------------------------------------------------------+
+          ||  Fork-Join-Pool                                                                                  |
+          ||                                                                                                  |
+          ||  Dispatcher: %-83s |
+          ||                                                                                                  |
+          ||  Paralellism: %-4s                                                                               |
+          ||                                                                                                  |
+          ||                 Pool Size       Active Threads     Running Threads     Queue Task Count          |
+          ||      Min           %-4s              %-4s                %-4s                %-4s                |
+          ||      Avg           %-4s              %-4s                %-4s                %-4s                |
+          ||      Max           %-4s              %-4s                %-4s                %-4s                |
+          ||                                                                                                  |
+          |+--------------------------------------------------------------------------------------------------+"""
+          .stripMargin.format(name,
+            paralellism.max, poolSize.min, activeThreads.min, runningThreads.min, queuedTaskCount.min,
+            poolSize.average, activeThreads.average, runningThreads.average, queuedTaskCount.average,
+            poolSize.max, activeThreads.max, runningThreads.max, queuedTaskCount.max))
+    }
+  }
+
+  def logThreadPoolExecutor(name: String, threadPoolMetrics: EntitySnapshot): Unit = {
+    for {
+      corePoolSize ← threadPoolMetrics.gauge("core-pool-size")
+      maxPoolSize ← threadPoolMetrics.gauge("max-pool-size")
+      poolSize ← threadPoolMetrics.gauge("pool-size")
+      activeThreads ← threadPoolMetrics.gauge("active-threads")
+      processedTasks ← threadPoolMetrics.gauge("processed-tasks")
+    } {
+
+      log.info(
+        """
+          |+--------------------------------------------------------------------------------------------------+
+          ||  Thread-Pool-Executor                                                                            |
+          ||                                                                                                  |
+          ||  Dispatcher: %-83s |
+          ||                                                                                                  |
+          ||  Core Pool Size: %-4s                                                                            |
+          ||  Max  Pool Size: %-4s                                                                            |
+          ||                                                                                                  |
+          ||                                                                                                  |
+          ||                         Pool Size        Active Threads          Processed Task                  |
+          ||           Min              %-4s                %-4s                   %-4s                       |
+          ||           Avg              %-4s                %-4s                   %-4s                       |
+          ||           Max              %-4s                %-4s                   %-4s                       |
+          ||                                                                                                  |
+          |+--------------------------------------------------------------------------------------------------+"""
+          .stripMargin.format(name,
+            corePoolSize.max,
+            maxPoolSize.max,
+            poolSize.min, activeThreads.min, processedTasks.min,
+            poolSize.average, activeThreads.average, processedTasks.average,
+            poolSize.max, activeThreads.max, processedTasks.max))
+    }
+
+  }
+
+  def logSystemMetrics(metric: String, snapshot: EntitySnapshot): Unit = metric match {
+    case "cpu"              ⇒ logCpuMetrics(snapshot)
+    case "network"          ⇒ logNetworkMetrics(snapshot)
+    case "process-cpu"      ⇒ logProcessCpuMetrics(snapshot)
+    case "context-switches" ⇒ logContextSwitchesMetrics(snapshot)
+    case ignoreOthers       ⇒
+  }
+
+  def logCpuMetrics(cpuMetrics: EntitySnapshot): Unit = {
+    for {
+      user ← cpuMetrics.histogram("cpu-user")
+      system ← cpuMetrics.histogram("cpu-system")
+      cpuWait ← cpuMetrics.histogram("cpu-wait")
+      idle ← cpuMetrics.histogram("cpu-idle")
+    } {
+
+      log.info(
+        """
         |+--------------------------------------------------------------------------------------------------+
         ||                                                                                                  |
         ||    CPU (ALL)                                                                                     |
         ||                                                                                                  |
         ||    User (percentage)       System (percentage)    Wait (percentage)   Idle (percentage)          |
         ||       Min: %-3s                   Min: %-3s               Min: %-3s           Min: %-3s              |
-        ||       Avg: %-3s                  Avg: %-3s               Avg: %-3s           Avg: %-3s              |
+        ||       Avg: %-3s                   Avg: %-3s               Avg: %-3s           Avg: %-3s              |
         ||       Max: %-3s                   Max: %-3s               Max: %-3s           Max: %-3s              |
         ||                                                                                                  |
         ||                                                                                                  |
         |+--------------------------------------------------------------------------------------------------+"""
-        .stripMargin.format(
-          user.min, system.min, cpuWait.min, idle.min,
-          user.average, system.average, cpuWait.average, idle.average,
-          user.max, system.max, cpuWait.max, idle.max))
+          .stripMargin.format(
+            user.min, system.min, cpuWait.min, idle.min,
+            user.average, system.average, cpuWait.average, idle.average,
+            user.max, system.max, cpuWait.max, idle.max))
+    }
 
   }
 
-  def logNetworkMetrics(nms: NetworkMetricSnapshot): Unit = {
-    import nms._
+  def logNetworkMetrics(networkMetrics: EntitySnapshot): Unit = {
+    for {
+      rxBytes ← networkMetrics.histogram("rx-bytes")
+      txBytes ← networkMetrics.histogram("tx-bytes")
+      rxErrors ← networkMetrics.histogram("rx-errors")
+      txErrors ← networkMetrics.histogram("tx-errors")
+    } {
 
-    log.info(
-      """
+      log.info(
+        """
         |+--------------------------------------------------------------------------------------------------+
         ||                                                                                                  |
         ||    Network (ALL)                                                                                 |
@@ -169,38 +243,49 @@ class LogReporterSubscriber extends Actor with ActorLogging {
         ||      Max: %-4s                  Max: %-4s                                                       |
         ||                                                                                                  |
         |+--------------------------------------------------------------------------------------------------+"""
-        .stripMargin.format(
-          rxBytes.min, txBytes.min, rxErrors.sum, txErrors.sum,
-          rxBytes.average, txBytes.average,
-          rxBytes.max, txBytes.max))
+          .stripMargin.
+          format(
+            rxBytes.min, txBytes.min, rxErrors.sum, txErrors.sum,
+            rxBytes.average, txBytes.average,
+            rxBytes.max, txBytes.max))
+    }
   }
 
-  def logProcessCpuMetrics(pcms: ProcessCPUMetricsSnapshot): Unit = {
-    import pcms._
+  def logProcessCpuMetrics(processCpuMetrics: EntitySnapshot): Unit = {
+    for {
+      user ← processCpuMetrics.histogram("process-user-cpu")
+      total ← processCpuMetrics.histogram("process-cpu")
+    } {
 
-    log.info(
-      """
+      log.info(
+        """
         |+--------------------------------------------------------------------------------------------------+
         ||                                                                                                  |
         ||    Process-CPU                                                                                   |
         ||                                                                                                  |
-        ||              Cpu-Percentage                           Total-Process-Time                         |
+        ||             User-Percentage                           Total-Percentage                           |
         ||                Min: %-12s                         Min: %-12s                       |
         ||                Avg: %-12s                         Avg: %-12s                       |
         ||                Max: %-12s                         Max: %-12s                       |
         ||                                                                                                  |
         |+--------------------------------------------------------------------------------------------------+"""
-        .stripMargin.format(
-          (cpuPercent.min / 100), totalProcessTime.min,
-          (cpuPercent.average / 100), totalProcessTime.average,
-          (cpuPercent.max / 100), totalProcessTime.max))
+          .stripMargin.format(
+            user.min, total.min,
+            user.average, total.average,
+            user.max, total.max))
+    }
+
   }
 
-  def logContextSwitchesMetrics(csms: ContextSwitchesMetricsSnapshot): Unit = {
-    import csms._
+  def logContextSwitchesMetrics(contextSwitchMetrics: EntitySnapshot): Unit = {
+    for {
+      perProcessVoluntary ← contextSwitchMetrics.histogram("context-switches-process-voluntary")
+      perProcessNonVoluntary ← contextSwitchMetrics.histogram("context-switches-process-non-voluntary")
+      global ← contextSwitchMetrics.histogram("context-switches-global")
+    } {
 
-    log.info(
-      """
+      log.info(
+        """
         |+--------------------------------------------------------------------------------------------------+
         ||                                                                                                  |
         ||    Context-Switches                                                                              |
@@ -211,18 +296,24 @@ class LogReporterSubscriber extends Actor with ActorLogging {
         ||    Max: %-12s                   Max: %-12s                  Max: %-12s      |
         ||                                                                                                  |
         |+--------------------------------------------------------------------------------------------------+"""
-        .stripMargin.format(
-          global.min, perProcessNonVoluntary.min, perProcessVoluntary.min,
-          global.average, perProcessNonVoluntary.average, perProcessVoluntary.average,
-          global.max, perProcessNonVoluntary.max, perProcessVoluntary.max))
+          .stripMargin.
+          format(
+            global.min, perProcessNonVoluntary.min, perProcessVoluntary.min,
+            global.average, perProcessNonVoluntary.average, perProcessVoluntary.average,
+            global.max, perProcessNonVoluntary.max, perProcessVoluntary.max))
+    }
 
   }
 
-  def logTraceMetrics(name: String, tms: TraceMetricsSnapshot): Unit = {
+  def logTraceMetrics(name: String, traceSnapshot: EntitySnapshot): Unit = {
     val traceMetricsData = StringBuilder.newBuilder
 
-    traceMetricsData.append(
-      """
+    for {
+      elapsedTime ← traceSnapshot.histogram("elapsed-time")
+    } {
+
+      traceMetricsData.append(
+        """
         |+--------------------------------------------------------------------------------------------------+
         ||                                                                                                  |
         ||    Trace: %-83s    |
@@ -230,89 +321,89 @@ class LogReporterSubscriber extends Actor with ActorLogging {
         ||                                                                                                  |
         ||  Elapsed Time (nanoseconds):                                                                     |
         |"""
-        .stripMargin.format(
-          name, tms.elapsedTime.numberOfMeasurements))
+          .stripMargin.format(
+            name, elapsedTime.numberOfMeasurements))
 
-    traceMetricsData.append(compactHistogramView(tms.elapsedTime))
-    traceMetricsData.append(
-      """
-        ||                                                                                                  |
-        |+--------------------------------------------------------------------------------------------------+"""
-        .stripMargin)
+      traceMetricsData.append(compactHistogramView(elapsedTime))
+      traceMetricsData.append(
+        """
+          ||                                                                                                  |
+          |+--------------------------------------------------------------------------------------------------+"""
+          .
+          stripMargin)
 
-    log.info(traceMetricsData.toString())
+      log.info(traceMetricsData.toString())
+    }
   }
 
-  def logUserMetrics(histograms: Map[MetricGroupIdentity, Histogram.Snapshot],
-    counters: Map[MetricGroupIdentity, Counter.Snapshot], minMaxCounters: Map[MetricGroupIdentity, Histogram.Snapshot],
-    gauges: Map[MetricGroupIdentity, Histogram.Snapshot]): Unit = {
+  def logMetrics(histograms: Map[String, Option[Histogram.Snapshot]],
+    counters: Map[String, Option[Counter.Snapshot]], minMaxCounters: Map[String, Option[Histogram.Snapshot]],
+    gauges: Map[String, Option[Histogram.Snapshot]]): Unit = {
 
     if (histograms.isEmpty && counters.isEmpty && minMaxCounters.isEmpty && gauges.isEmpty) {
-      log.info("No user metrics reported")
+      log.info("No metrics reported")
       return
     }
 
-    val userMetricsData = StringBuilder.newBuilder
+    val metricsData = StringBuilder.newBuilder
 
-    userMetricsData.append(
+    metricsData.append(
       """
         |+--------------------------------------------------------------------------------------------------+
         ||                                                                                                  |
-        ||                                       User Counters                                              |
+        ||                                         Counters                                                 |
         ||                                       -------------                                              |
         |""".stripMargin)
 
-    counters.toList.sortBy(_._1.name.toLowerCase).foreach {
-      case (counter, snapshot) ⇒ userMetricsData.append(userCounterString(counter.name, snapshot))
-    }
+    counters.foreach { case (name, snapshot) ⇒ metricsData.append(userCounterString(name, snapshot.get)) }
 
-    userMetricsData.append(
+    metricsData.append(
       """||                                                                                                  |
         ||                                                                                                  |
-        ||                                      User Histograms                                             |
-        ||                                      ---------------                                             |
+        ||                                        Histograms                                                |
+        ||                                      --------------                                              |
         |""".stripMargin)
 
     histograms.foreach {
-      case (histogram, snapshot) ⇒
-        userMetricsData.append("|  %-40s                                                        |\n".format(histogram.name))
-        userMetricsData.append(compactHistogramView(snapshot))
-        userMetricsData.append("\n|                                                                                                  |\n")
+      case (name, snapshot) ⇒
+        metricsData.append("|  %-40s                                                        |\n".format(name))
+        metricsData.append(compactHistogramView(snapshot.get))
+        metricsData.append("\n|                                                                                                  |\n")
     }
 
-    userMetricsData.append(
+    metricsData.append(
       """||                                                                                                  |
-        ||                                    User MinMaxCounters                                           |
-        ||                                    -------------------                                           |
+        ||                                      MinMaxCounters                                              |
+        ||                                    -----------------                                             |
         |""".stripMargin)
 
     minMaxCounters.foreach {
-      case (minMaxCounter, snapshot) ⇒
-        userMetricsData.append("|  %-40s                                                        |\n".format(minMaxCounter.name))
-        userMetricsData.append(simpleHistogramView(snapshot))
-        userMetricsData.append("\n|                                                                                                  |\n")
+      case (name, snapshot) ⇒
+        metricsData.append("|  %-40s                                                        |\n".format(name))
+        metricsData.append(histogramView(snapshot.get))
+        metricsData.append("\n|                                                                                                  |\n")
     }
 
-    userMetricsData.append(
+    metricsData.append(
       """||                                                                                                  |
-        ||                                        User Gauges                                               |
-        ||                                        -----------                                               |
+        ||                                          Gauges                                                  |
+        ||                                        ----------                                                |
         |"""
         .stripMargin)
 
     gauges.foreach {
-      case (gauge, snapshot) ⇒
-        userMetricsData.append("|  %-40s                                                        |\n".format(gauge.name))
-        userMetricsData.append(simpleHistogramView(snapshot))
-        userMetricsData.append("\n|                                                                                                  |\n")
+      case (name, snapshot) ⇒
+        metricsData.append("|  %-40s                                                        |\n".format(name))
+        metricsData.append(histogramView(snapshot.get))
+        metricsData.append("\n|                                                                                                  |\n")
     }
 
-    userMetricsData.append(
+    metricsData.append(
       """||                                                                                                  |
         |+--------------------------------------------------------------------------------------------------+"""
         .stripMargin)
 
-    log.info(userMetricsData.toString())
+    log.info(metricsData.toString())
   }
 
   def userCounterString(counterName: String, snapshot: Counter.Snapshot): String = {
@@ -331,7 +422,7 @@ class LogReporterSubscriber extends Actor with ActorLogging {
     sb.toString()
   }
 
-  def simpleHistogramView(histogram: Histogram.Snapshot): String =
+  def histogramView(histogram: Histogram.Snapshot): String =
     "|          Min: %-12s           Average: %-12s                Max: %-12s      |"
       .format(histogram.min, histogram.average, histogram.max)
 }

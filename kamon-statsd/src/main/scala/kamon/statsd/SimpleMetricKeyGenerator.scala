@@ -3,11 +3,10 @@ package kamon.statsd
 import java.lang.management.ManagementFactory
 
 import com.typesafe.config.Config
-import kamon.metric.UserMetrics.UserMetricGroup
-import kamon.metric.{ MetricIdentity, MetricGroupIdentity }
+import kamon.metric.{ SingleInstrumentEntityRecorder, MetricKey, Entity }
 
 trait MetricKeyGenerator {
-  def generateKey(groupIdentity: MetricGroupIdentity, metricIdentity: MetricIdentity): String
+  def generateKey(entity: Entity, metricKey: MetricKey): String
 }
 
 class SimpleMetricKeyGenerator(config: Config) extends MetricKeyGenerator {
@@ -27,15 +26,17 @@ class SimpleMetricKeyGenerator(config: Config) extends MetricKeyGenerator {
     if (includeHostname) s"$application.$normalizedHostname"
     else application
 
-  def generateKey(groupIdentity: MetricGroupIdentity, metricIdentity: MetricIdentity): String = {
-    val normalizedGroupName = normalizer(groupIdentity.name)
-    val key = s"${baseName}.${groupIdentity.category.name}.${normalizedGroupName}"
+  def generateKey(entity: Entity, metricKey: MetricKey): String = entity.category match {
+    case "trace-segment" ⇒
+      s"${baseName}.trace.${normalizer(entity.tags("trace"))}.segments.${normalizer(entity.name)}.${metricKey.name}"
 
-    if (isUserMetric(groupIdentity)) key
-    else s"${key}.${metricIdentity.name}"
+    case _ if SingleInstrumentEntityRecorder.AllCategories.contains(entity.category) ⇒
+      s"${baseName}.${entity.category}.${normalizer(entity.name)}"
+
+    case _ ⇒
+      s"${baseName}.${entity.category}.${normalizer(entity.name)}.${metricKey.name}"
+
   }
-
-  def isUserMetric(groupIdentity: MetricGroupIdentity): Boolean = groupIdentity.isInstanceOf[UserMetricGroup]
 
   def hostName: String = ManagementFactory.getRuntimeMXBean.getName.split('@')(1)
 
