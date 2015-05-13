@@ -2,8 +2,8 @@
 
 <aspectj>
   <aspects>
+      <aspect name="kamon.netty.instrumentation.MetricsIntoSingleEventLoopMixin"/>
       <aspect name="kamon.netty.instrumentation.NettyInstrumentation"/>
-      <!--<aspect name="kamon.annotation.instrumentation.AnnotationInstrumentation"/>-->
   </aspects>
    <weaver>
     <include within="io.netty..*"/>

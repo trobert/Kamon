@@ -19,7 +19,7 @@ import akka.actor.{ ExtendedActorSystem, Extension, ExtensionId, ExtensionIdProv
 import akka.event.Logging
 import kamon.Kamon
 
-object Netty extends ExtensionId[AnnotationExtension] with ExtensionIdProvider {
+object Netty extends ExtensionId[NettyExtension] with ExtensionIdProvider {
   override def lookup(): ExtensionId[_ <: Extension] = Netty
   override def createExtension(system: ExtendedActorSystem): NettyExtension = new NettyExtension(system)
 }
