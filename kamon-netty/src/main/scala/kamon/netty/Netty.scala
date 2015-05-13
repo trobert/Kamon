@@ -29,5 +29,8 @@ class NettyExtension(system: ExtendedActorSystem) extends Kamon.Extension {
   log.info(s"Starting the Kamon(Netty) extension")
 
   val config = system.settings.config.getConfig("kamon.netty")
+
+  val metricsExtension = Kamon.metrics
+  ThroughputMetrics
 }
 
