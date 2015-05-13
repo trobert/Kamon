@@ -8,10 +8,6 @@ import io.netty.handler.logging.LoggingHandler
 
 class HttpHelloWorldServerInitializer extends ChannelInitializer[SocketChannel] {
 
-  def getPipeline():ChannelPipeline ={
-
-  }
-
   def initChannel(ch: SocketChannel): Unit = {
     val p = ch.pipeline()
 

@@ -18,6 +18,7 @@ package kamon.netty
 import akka.actor.{ ExtendedActorSystem, Extension, ExtensionId, ExtensionIdProvider }
 import akka.event.Logging
 import kamon.Kamon
+import kamon.metric.Entity
 
 object Netty extends ExtensionId[NettyExtension] with ExtensionIdProvider {
   override def lookup(): ExtensionId[_ <: Extension] = Netty
@@ -30,7 +31,6 @@ class NettyExtension(system: ExtendedActorSystem) extends Kamon.Extension {
 
   val config = system.settings.config.getConfig("kamon.netty")
 
-  val metricsExtension = Kamon.metrics
-  ThroughputMetrics
+  Kamon.metrics.entity(ThroughputMetrics, Entity("throughput", ThroughputMetrics.category))
 }
 

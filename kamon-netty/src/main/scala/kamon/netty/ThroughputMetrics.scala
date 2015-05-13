@@ -7,25 +7,25 @@ import kamon.netty.instrumentation.ThroughputHandler
 class ThroughputMetrics(instrumentFactory: InstrumentFactory) extends GenericEntityRecorder(instrumentFactory) {
 
   gauge("read-bytes", Memory.Bytes, () ⇒ {
-    println("asfassfd")
+    println( ThroughputHandler.readBytes())
 
     ThroughputHandler.readBytes()
   })
 
   gauge("read-bytes-total", Memory.Bytes, () ⇒ {
-    println("asfassfd")
+    println(ThroughputHandler.readBytesTotal())
 
     ThroughputHandler.readBytesTotal()
   })
 
   gauge("written-bytes", Memory.Bytes, () ⇒ {
-    println("asfassfd")
+    println( ThroughputHandler.writtenBytes())
 
     ThroughputHandler.writtenBytes()
   })
 
   gauge("written-bytes-total", Memory.Bytes, () ⇒ {
-    println("asfassfd")
+    println( ThroughputHandler.writtenBytesTotal())
     ThroughputHandler.writtenBytesTotal()
   })
 
