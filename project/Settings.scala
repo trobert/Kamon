@@ -26,13 +26,14 @@ import net.virtualvoid.sbt.graph.Plugin.graphSettings
 object Settings {
 
   val JavaVersion = "1.6"
-  val ScalaVersion = "2.11.5"
+  val ScalaVersion = "2.11.6"
 
   lazy val basicSettings = Seq(
-    crossScalaVersions      := Seq("2.10.5", "2.11.6"),
+    scalaVersion            := ScalaVersion,
     resolvers              ++= Dependencies.resolutionRepos,
     fork in run             := true,
     parallelExecution in Test := false,
+    moduleName              := moduleName.value + "_akka-2.4",
     testGrouping in Test    := singleTestPerJvm((definedTests in Test).value, (javaOptions in Test).value),
     javacOptions            := Seq(
       "-Xlint:-options",
