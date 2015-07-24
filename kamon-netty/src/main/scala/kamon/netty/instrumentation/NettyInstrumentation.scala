@@ -16,11 +16,14 @@
 
 package kamon.netty.instrumentation
 
+import io.netty.channel.EventLoopGroup
+import io.netty.util.concurrent.MultithreadEventExecutorGroup
 import kamon.Kamon
 import kamon.metric.Entity
 import kamon.netty.EventLoopMetrics
 import kamon.util.Latency
-import org.aspectj.lang.ProceedingJoinPoint
+import org.aspectj.lang.reflect.MethodSignature
+import org.aspectj.lang.{JoinPoint, ProceedingJoinPoint}
 import org.aspectj.lang.annotation._
 
 @Aspect
@@ -49,6 +52,27 @@ class NettyInstrumentation {
   def onRunAllTasks(pjp:ProceedingJoinPoint, eventLoop:EventLoopWithMetrics): Any = {
     eventLoop.recorder.map(recorder => Latency.measure(recorder.loopExecutionTime)(pjp.proceed())).getOrElse(pjp.proceed())
   }
+
+
+  @After("execution(* io.netty.bootstrap.ServerBootstrap.group(..)) && args(bossGroup, workerGroup)")
+  def onNewServerBootstrap(jp:JoinPoint,bossGroup:NamedEventLoopGroup, workerGroup:NamedEventLoopGroup):Unit ={
+    if(bossGroup == workerGroup) {
+      bossGroup.name = "boss-group"
+      workerGroup.name = "boss-group"
+      println(s" instance ${bossGroup.name} and threads ${bossGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}")
+    }else{
+      bossGroup.name = "boss-group"
+      workerGroup.name = "worker-group"
+      println(s" instance ${bossGroup.name} and threads ${bossGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}")
+      println(s" instance ${workerGroup.name} and threads ${workerGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}")
+    }
+    println(jp.getSignature.asInstanceOf[MethodSignature].getMethod.getParameterAnnotations)
+  }
+
+  @After("execution(io.netty.util.concurrent.MultithreadEventExecutorGroup.new(..)) && args(nThreads, *, *) && this(multiThreadEventExecutor)")
+  def onNewMultithreadEventExecutorGroup(multiThreadEventExecutor:MultithreadEventExecutorGroup, nThreads:Int):Unit ={
+    println(s" instance ${multiThreadEventExecutor.asInstanceOf[NamedEventLoopGroup].name} and threads $nThreads")
+  }
 }
 
 trait EventLoopWithMetrics {
@@ -56,8 +80,15 @@ trait EventLoopWithMetrics {
   var recorder: Option[EventLoopMetrics] = None
 }
 
+trait NamedEventLoopGroup {
+  var name:String = _
+}
+
 @Aspect
 class MetricsIntoSingleEventLoopMixin {
+
+  @DeclareMixin("io.netty.channel.EventLoopGroup+")
+  def mixinEventLoopGroupWithNamedEventLoopGroup: NamedEventLoopGroup = new NamedEventLoopGroup {}
 
   @DeclareMixin("io.netty.channel.EventLoop+")
   def mixinEventLoopWithMetricsTEventLoop: EventLoopWithMetrics = new EventLoopWithMetrics {}
