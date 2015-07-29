@@ -16,7 +16,10 @@
 
 package kamon.netty.instrumentation
 
-import io.netty.channel.EventLoopGroup
+import java.util.concurrent.TimeUnit
+
+import io.netty.channel.nio.NioEventLoop
+import io.netty.channel.{MultithreadEventLoopGroup, EventLoopGroup}
 import io.netty.util.concurrent.MultithreadEventExecutorGroup
 import kamon.Kamon
 import kamon.metric.Entity
@@ -29,27 +32,31 @@ import org.aspectj.lang.annotation._
 @Aspect
 class NettyInstrumentation {
 
-  @After("execution(io.netty.channel.EventLoop+.new(..)) && this(eventLoop)")
+  @After("execution(io.netty.channel.SingleThreadEventLoop.new(..)) && this(eventLoop)")
   def onNewEventLoop(eventLoop:EventLoopWithMetrics):Unit ={
     val eventLoopEntity = Entity(eventLoop.getClass.getSimpleName, EventLoopMetrics.category)
     val eventLoopRecorder = Kamon.metrics.entity(EventLoopMetrics, eventLoopEntity)
+    println("neweventLoop: " + eventLoop.hashCode() + "thread: " + Thread.currentThread().getName)
 
     eventLoop.entity = eventLoopEntity
     eventLoop.recorder = Some(eventLoopRecorder)
   }
 
-  @AfterReturning("execution(* io.netty.channel.EventLoop+.register(*, *)) && this(eventLoop)")
+  @AfterReturning("execution(* io.netty.channel.SingleThreadEventLoop+.register(*, *)) && this(eventLoop)")
   def onRegister(eventLoop:EventLoopWithMetrics): Unit = {
+      println("register: " + eventLoop.hashCode() + "thread: " + Thread.currentThread().getName)
       eventLoop.recorder.foreach(recorder => recorder.totalChannelsRegistered.increment())
   }
 
   @AfterReturning("execution(* io.netty.util.concurrent.SingleThreadEventExecutor+.cancel(..)) && this(eventLoop)")
   def onCancelTasks(eventLoop:EventLoopWithMetrics): Unit = {
+    println("cancel: " + eventLoop.hashCode() + "thread: " + Thread.currentThread().getName)
     eventLoop.recorder.foreach(recorder => recorder.totalChannelsRegistered.decrement())
   }
 
   @Around("execution(* io.netty.util.concurrent.SingleThreadEventExecutor+.runAllTasks(..)) && this(eventLoop)")
   def onRunAllTasks(pjp:ProceedingJoinPoint, eventLoop:EventLoopWithMetrics): Any = {
+    println("runAllTasks: " + eventLoop.hashCode() + "thread: " + Thread.currentThread().getName)
     eventLoop.recorder.map(recorder => Latency.measure(recorder.loopExecutionTime)(pjp.proceed())).getOrElse(pjp.proceed())
   }
 
@@ -59,19 +66,44 @@ class NettyInstrumentation {
     if(bossGroup == workerGroup) {
       bossGroup.name = "boss-group"
       workerGroup.name = "boss-group"
-      println(s" instance ${bossGroup.name} and threads ${bossGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}")
+      println(s" instance ${bossGroup.name} and threads ${bossGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}" + "thread: " + Thread.currentThread().getName)
     }else{
       bossGroup.name = "boss-group"
       workerGroup.name = "worker-group"
-      println(s" instance ${bossGroup.name} and threads ${bossGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}")
-      println(s" instance ${workerGroup.name} and threads ${workerGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}")
+      println(s" instance ${bossGroup.name} and threads ${bossGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}" + "thread: " + Thread.currentThread().getName)
+      println(s" instance ${workerGroup.name} and threads ${workerGroup.asInstanceOf[MultithreadEventExecutorGroup].executorCount()}" + "thread: " + Thread.currentThread().getName)
     }
     println(jp.getSignature.asInstanceOf[MethodSignature].getMethod.getParameterAnnotations)
   }
 
   @After("execution(io.netty.util.concurrent.MultithreadEventExecutorGroup.new(..)) && args(nThreads, *, *) && this(multiThreadEventExecutor)")
   def onNewMultithreadEventExecutorGroup(multiThreadEventExecutor:MultithreadEventExecutorGroup, nThreads:Int):Unit ={
-    println(s" instance ${multiThreadEventExecutor.asInstanceOf[NamedEventLoopGroup].name} and threads $nThreads")
+    println(s" instance ${multiThreadEventExecutor.asInstanceOf[NamedEventLoopGroup].name} and threads $nThreads" + "thread: " + Thread.currentThread().getName)
+  }
+
+  @Pointcut("execution(* io.netty.channel.nio.NioEventLoop.select(*))")
+  def point():Unit = {}
+
+  var start = 0L;
+
+//  @Before("point()")
+//  def bla():Unit = {
+//      start = System.currentTimeMillis()
+//      println("NioEventLoop.select(*)")
+//  }
+
+  @Around("call(int java.nio.channels.Selector.select(..)) && args(timeout) && cflow(execution(* io.netty.channel.nio.NioEventLoop.select(*))) && !within(kamon.netty.instrumentation.NettyInstrumentation)")
+  def bl2a(pjs:ProceedingJoinPoint, timeout:Long):Any = {
+        val beforeSelect = System.nanoTime()
+        val o  =pjs.proceed()
+    val l: Long = System.nanoTime() - beforeSelect
+    val selectTime= TimeUnit.MILLISECONDS.convert(l,TimeUnit.NANOSECONDS);
+
+    println(s"select time $selectTime timeout $timeout")
+    if(selectTime < timeout){
+          println("Selector.select "  + "hgjghjghjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjg")
+        }
+       o
   }
 }
 
@@ -93,4 +125,3 @@ class MetricsIntoSingleEventLoopMixin {
   @DeclareMixin("io.netty.channel.EventLoop+")
   def mixinEventLoopWithMetricsTEventLoop: EventLoopWithMetrics = new EventLoopWithMetrics {}
 }
-
