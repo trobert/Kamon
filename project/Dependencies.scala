@@ -54,6 +54,7 @@ object Dependencies {
   val sigarLoader       = "io.kamon"                  %   "sigar-loader"          % "1.6.5-rev002"
   val h2                = "com.h2database"            %   "h2"                    % "1.4.182"
   val el                = "org.glassfish"             %   "javax.el"              % "3.0.0"
+  val jctools           = "org.jctools"               %   "jctools-core"          % "1.0"
 
   //play 2.3.x
   val play23            = "com.typesafe.play"         %%  "play"                  % play23Version

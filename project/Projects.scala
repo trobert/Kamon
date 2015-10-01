@@ -36,7 +36,7 @@ object Projects extends Build {
     .settings(
       javacOptions in Compile ++= Seq("-XDignore.symbol.file"),
       libraryDependencies ++=
-        compile(akkaActor, hdrHistogram, typesafeConfig) ++
+        compile(akkaActor, hdrHistogram, typesafeConfig, jctools) ++
         provided(aspectJ) ++
         optional(logback) ++
         test(scalatest, akkaTestKit, akkaSlf4j, slf4Jul, slf4Log4j, logback))
@@ -112,6 +112,17 @@ object Projects extends Build {
     .settings(
       libraryDependencies ++=
         compile(akkaActor, akkaSlf4j, sprayCan, sprayClient, sprayRouting, logback))
+
+  lazy val kamonJmh = Project("kamon-jmh", file("kamon-jmh"))
+    .dependsOn(kamonCore)
+    .settings(basicSettings: _*)
+    .settings(formatSettings: _*)
+    .settings(noPublishing: _*)
+    .enablePlugins(pl.project13.scala.sbt.JmhPlugin)
+//    .settings(aspectJSettings: _*)
+    .settings(
+      libraryDependencies ++=
+        compile(akkaActor, akkaSlf4j, logback))
 
 
   lazy val kamonTestkit = Project("kamon-testkit", file("kamon-testkit"))
