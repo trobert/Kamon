@@ -59,6 +59,8 @@ object MilliTimestamp {
  *  timestamp in nanoseconds.
  */
 class NanoTimestamp(val nanos: Long) extends AnyVal {
+  def -(that: NanoTimestamp) = new NanoTimestamp(nanos - that.nanos)
+  def +(that: NanoTimestamp) = new NanoTimestamp(nanos + that.nanos)
   override def toString: String = String.valueOf(nanos) + ".nanos"
 }
 

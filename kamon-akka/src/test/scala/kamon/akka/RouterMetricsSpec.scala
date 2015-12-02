@@ -138,6 +138,19 @@ class RouterMetricsSpec extends BaseKamonSpec("router-metrics-spec") {
       routerSnapshot.histogram("time-in-mailbox").get.recordsIterator.next().level should be(timings.approximateTimeInMailbox +- 10.millis.toNanos)
     }
 
+    "record the time-in-mailbox for balancing pool routers" in new RouterMetricsFixtures {
+      val timingsListener = TestProbe()
+      val router = createTestBalancingPoolRouter("measuring-time-in-mailbox-in-balancing-pool-router")
+
+      router.tell(RouterTrackTimings(sleep = Some(1 second)), timingsListener.ref)
+      val timings = timingsListener.expectMsgType[RouterTrackedTimings]
+      val routerSnapshot = collectMetricsOf("user/measuring-time-in-mailbox-in-balancing-pool-router").get
+
+      routerSnapshot.histogram("time-in-mailbox").get.numberOfMeasurements should be(1L)
+      routerSnapshot.histogram("time-in-mailbox").get.recordsIterator.next().count should be(1L)
+      routerSnapshot.histogram("time-in-mailbox").get.recordsIterator.next().level should be(timings.approximateTimeInMailbox +- 10.millis.toNanos)
+    }
+
     "record the time-in-mailbox for group routers" in new RouterMetricsFixtures {
       val timingsListener = TestProbe()
       val router = createTestGroupRouter("measuring-time-in-mailbox-in-group-router")
@@ -215,6 +228,20 @@ class RouterMetricsSpec extends BaseKamonSpec("router-metrics-spec") {
 
     def createTestPoolRouter(routerName: String): ActorRef = {
       val router = system.actorOf(RoundRobinPool(5).props(Props[RouterMetricsTestActor]), routerName)
+      val initialiseListener = TestProbe()
+
+      // Ensure that the router has been created before returning.
+      router.tell(Ping, initialiseListener.ref)
+      initialiseListener.expectMsg(Pong)
+
+      // Cleanup all the metric recording instruments:
+      collectMetricsOf("user/" + routerName)
+
+      router
+    }
+
+    def createTestBalancingPoolRouter(routerName: String): ActorRef = {
+      val router = system.actorOf(BalancingPool(5).props(Props[RouterMetricsTestActor]), routerName)
       val initialiseListener = TestProbe()
 
       // Ensure that the router has been created before returning.
