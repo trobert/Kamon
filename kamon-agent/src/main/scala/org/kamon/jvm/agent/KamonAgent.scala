@@ -31,7 +31,7 @@ import net.bytebuddy.description.`type`.TypeDescription
 import net.bytebuddy.description.modifier.Visibility
 import net.bytebuddy.dynamic.DynamicType.Builder
 import net.bytebuddy.dynamic.loading.ClassLoadingStrategy
-import net.bytebuddy.dynamic.{ClassFileLocator, TargetType}
+import net.bytebuddy.dynamic.{DynamicType, ClassFileLocator, TargetType}
 import net.bytebuddy.implementation.MethodDelegation._
 import net.bytebuddy.implementation.{SuperMethodCall, MethodDelegation, FixedValue}
 import net.bytebuddy.implementation.bind.annotation._
@@ -69,8 +69,25 @@ object KamonAgent  {
 
 
 
-    new AgentBuilder.Default()
-      .`type`(named[NamedElement]("scala.concurrent.impl.CallbackRunnable"))//.or(named[NamedElement]("scala.concurrent.impl.Future.PromiseCompletingRunnable")))
+      new AgentBuilder.Default()
+      .withListener(new AgentBuilder.Listener() {
+        override def onError(typeName: String, throwable: Throwable): Unit = {
+          System.out.println("Error - " + typeName+", "+ throwable.getMessage());
+        }
+
+        override def onTransformation(typeDescription: TypeDescription, dynamicType: DynamicType): Unit = {
+          System.out.println("Transformed - " + typeDescription+", type = "+dynamicType);
+        }
+
+        override def onComplete(typeName: String): Unit = {
+//          System.out.println("Completed - " + typeName);
+        }
+
+        override def onIgnored(typeDescription: TypeDescription): Unit = {
+//          System.out.println("Ignored - " + typeDescription);
+        }
+      })
+      .`type`(named[NamedElement]("scala.concurrent.impl.CallbackRunnable").or(named[NamedElement]("scala.concurrent.impl.Future.PromiseCompletingRunnable")))
       .transform(new Transformer {
         override def transform(builder: Builder[_], typeDescription: TypeDescription): Builder[_] = {
           builder
