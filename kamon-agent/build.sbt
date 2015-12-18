@@ -8,6 +8,8 @@ libraryDependencies += "net.bytebuddy" % "byte-buddy" % "0.7.7"
 
 libraryDependencies += "io.kamon" % "kamon-core_2.11" % "0.5.2"
 
+libraryDependencies += "com.esotericsoftware.reflectasm" % "reflectasm" % "1.09"
+
 packageOptions in (Compile, packageBin) +=
   Package.ManifestAttributes("Premain-Class" -> "org.kamon.jvm.agent.KamonAgent",
                              "Agent-Class" -> "org.kamon.jvm.agent.KamonAgent",
