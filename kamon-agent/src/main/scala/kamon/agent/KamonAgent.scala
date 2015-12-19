@@ -14,22 +14,9 @@
  * limitations under the License.
  * ========================================================== */
 
-package org.kamon.jvm.agent
+package kamon.agent
 
 import java.lang.instrument.Instrumentation
-
-import kamon.scala.instrumentation.FutureInstrumentation
-import kamon.trace.{TraceContext, TraceContextAware}
-import net.bytebuddy.agent.builder.AgentBuilder
-import net.bytebuddy.agent.builder.AgentBuilder.Transformer
-import net.bytebuddy.description.NamedElement
-import net.bytebuddy.description.`type`.TypeDescription
-import net.bytebuddy.description.modifier.Visibility._
-import net.bytebuddy.dynamic.DynamicType
-import net.bytebuddy.dynamic.DynamicType.Builder
-import net.bytebuddy.implementation.MethodDelegation._
-import net.bytebuddy.implementation.{FieldAccessor, SuperMethodCall}
-import net.bytebuddy.matcher.ElementMatchers._
 
 object KamonAgent  {
 
@@ -40,27 +27,13 @@ object KamonAgent  {
    * will be called. Then the real application main method will be called.
    *
    * @param args
-   * @param inst
+   * @param instrumentation
    * @throws Exception
    */
   @throws(classOf[Exception])
-  def premain(args:String, inst:Instrumentation):Unit = {
-    println(s"premain method invoked with args: $args and inst: $inst")
-    FutureInstrumentation(inst)
-//    val pool = TypePool.Default.ofClassPath()
-//
-//    new ByteBuddy().subclass(pool.describe("sc  ala.concurrent.impl.CallbackRunnable").resolve())
-//      .implement(classOf[TraceContextAware])
-//      .defineField("traceContext", classOf[TraceContextAware], Visibility.PRIVATE)
-//      .constructor(any()).intercept(SuperMethodCall.INSTANCE.andThen(to(ConstructorInterceptor)))
-//      .method(named("run"))
-//      .intercept(to(FutureInstrumentation))
-//      .make()
-//        .saveIn(new File("/home/diego/puto"))
-//      .load(getClass.getClassLoader, ClassLoadingStrategy.Default.WRAPPER)
-//      .getLoaded
-
-
+  def premain(args:String, instrumentation:Instrumentation):Unit = {
+    println(s"premain method invoked with args: $args and inst: $instrumentation")
+    InstrumentationLoader.load(instrumentation)
 
 //      new AgentBuilder.Default()
 //      .withListener(new AgentBuilder.Listener() {

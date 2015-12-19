@@ -10,9 +10,10 @@ libraryDependencies += "io.kamon" % "kamon-core_2.11" % "0.5.2"
 
 libraryDependencies += "com.esotericsoftware.reflectasm" % "reflectasm" % "1.09"
 
+libraryDependencies += "com.typesafe" % "config" % "1.3.0"
+
 packageOptions in (Compile, packageBin) +=
-  Package.ManifestAttributes("Premain-Class" -> "org.kamon.jvm.agent.KamonAgent",
-                             "Agent-Class" -> "org.kamon.jvm.agent.KamonAgent",
+  Package.ManifestAttributes("Premain-Class" -> "kamon.agent.KamonAgent",
+                             "Agent-Class" -> "kamon.agent.KamonAgent",
                              "Can-Redefine-Classes" -> "true",
-                             "Can-Set-Native-Method-Prefix" -> "true",
                              "Can-Retransform-Classes" -> "true")
