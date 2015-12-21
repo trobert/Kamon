@@ -1,38 +1,30 @@
 package kamon.agent
 
-import java.io.File
-
 import kamon.Kamon
-import kamon.instrumentation.scala.FutureInstrumentation
+import net.bytebuddy.jar.asm.Opcodes.{ACC_FINAL => FINAL, ACC_PRIVATE => PRIVATE, ACC_TRANSIENT => TRANSIENT}
+
+
 //import kamon.instrumentation.scala.FutureInstrumentation.ConstructorInterceptor
-import kamon.trace.{TraceContext, TraceContextAware, Tracer}
-import net.bytebuddy.ByteBuddy
-import net.bytebuddy.implementation.{SuperMethodCall, FieldAccessor}
-import net.bytebuddy.pool.TypePool
+import kamon.trace.Tracer
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import net.bytebuddy.agent.builder.AgentBuilder
-import net.bytebuddy.description.NamedElement
-import net.bytebuddy.description.modifier.Visibility._
-import net.bytebuddy.implementation.MethodDelegation._
-import net.bytebuddy.implementation.bind.annotation.{FieldValue, SuperCall, This}
-import net.bytebuddy.implementation.{FieldAccessor, SuperMethodCall}
-import net.bytebuddy.matcher.ElementMatchers._
 
 object Test extends App {
     Kamon.start
 
 //  val pool = TypePool.Default.ofClassPath()
-//
-//  val a = new ByteBuddy().subclass(pool.describe("scala.concurrent.impl.CallbackRunnable").resolve())
-//    .implement(classOf[TraceContextAware])
-//    .intercept(FieldAccessor.ofField("traceContext"))
-//    .defineField("traceContext", classOf[TraceContext], PROTECTED)
-//    .constructor(any()).intercept(SuperMethodCall.INSTANCE.andThen(to(ConstructorInterceptor)))
-//    .method(named("run")).intercept(to(FutureInstrumentation))
-//    .make()
-//    .saveIn(new File("/home/diego/puto"))
+
+//  val a = new ByteBuddy().rebase(pool.describe("scala.concurrent.impl.CallbackRunnable").resolve(),ClassFileLocator.ForClassLoader.ofClassPath())
+//     .implement(classOf[TraceContextAware]).intercept(FieldAccessor.ofField("traceContext"))
+//    .defineField("traceContext", classOf[TraceContext], FINAL | PRIVATE | TRANSIENT)
+//    .method(named("run")).intercept(to(FutureInterceptor))
+//    .classVisitor(new ClassVisitorWrapper() {
+//      override def wrap(classVisitor: ClassVisitor): ClassVisitor =  new ReturnVisitor(classVisitor)
+//      override def mergeWriter(flags: Int): Int =   flags
+//      override def mergeReader(flags: Int): Int = flags | ClassReader.EXPAND_FRAMES
+//    })    .make()
+//    .saveIn(new File("/home/diego/puto11"))
 //        .load(getClass.getClassLoader, ClassLoadingStrategy.Default.WRAPPER)
 //    .getLoaded
 //
@@ -50,4 +42,15 @@ object Test extends App {
     ctxInFuture =>
       println(ctxInFuture == testTraceContext)
   }
+
+
+
 }
+
+//class ClassSuperVisitor() extends ClassVisitorWrapper {
+//  override def mergeWriter(flags: Int): Int = ???
+//
+//  override def wrap(classVisitor: ClassVisitor): = ???
+//
+//  override def mergeReader(flags: Int): Int = ???
+//}

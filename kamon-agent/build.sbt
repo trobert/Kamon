@@ -8,8 +8,6 @@ libraryDependencies += "net.bytebuddy" % "byte-buddy" % "0.7.7"
 
 libraryDependencies += "io.kamon" % "kamon-core_2.11" % "0.5.2"
 
-libraryDependencies += "com.esotericsoftware.reflectasm" % "reflectasm" % "1.09"
-
 libraryDependencies += "com.typesafe" % "config" % "1.3.0"
 
 packageOptions in (Compile, packageBin) +=
