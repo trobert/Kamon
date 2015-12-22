@@ -57,6 +57,8 @@ object Dependencies {
   val el                = "org.glassfish"             %   "javax.el"              % "3.0.0"
   val fluentdLogger     = "org.fluentd"               %%  "fluent-logger-scala"   % "0.5.1"
   val easyMock          = "org.easymock"              %   "easymock"              % "3.2"
+  val byteBuddy 	= "net.bytebuddy" 	      %   "byte-buddy" 		  % "0.7.7"
+	
 
   def compile   (deps: ModuleID*): Seq[ModuleID] = deps map (_ % "compile")
   def provided  (deps: ModuleID*): Seq[ModuleID] = deps map (_ % "provided")

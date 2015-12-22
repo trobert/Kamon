@@ -24,7 +24,7 @@ object Projects extends Build {
   lazy val kamon = Project("kamon", file("."))
     .aggregate(kamonCore, kamonScala, kamonAkka, kamonSpray, kamonNewrelic, kamonPlayground, kamonTestkit,
       kamonStatsD, kamonDatadog, kamonSPM, kamonSystemMetrics, kamonLogReporter, kamonAkkaRemote, kamonJdbc,
-      kamonAnnotation, kamonPlay, kamonJMXReporter, kamonFluentd, kamonAutoweave)
+      kamonAnnotation, kamonPlay, kamonJMXReporter, kamonFluentd, kamonAutoweave, kamonAgent)
     .settings(basicSettings: _*)
     .settings(formatSettings: _*)
     .settings(noPublishing: _*)
@@ -64,7 +64,7 @@ object Projects extends Build {
     .settings(aspectJSettings: _*)
     .settings(
       libraryDependencies ++=
-        compile() ++
+        compile(byteBuddy) ++
         provided(aspectJ) ++
         optional(scalazConcurrent) ++
         test(scalatest, akkaTestKit, akkaSlf4j, slf4jJul, slf4jLog4j, logback))
@@ -230,8 +230,21 @@ object Projects extends Build {
     .settings(formatSettings: _*)
     .settings(
       libraryDependencies ++=
-        compile(akkaActor) ++ compile(fluentdLogger) ++
+        compile(akkaActor, fluentdLogger) ++
           test(scalatest, akkaTestKit, easyMock, slf4jApi, slf4jnop))
+
+  lazy val kamonAgent = Project("kamon-agent", file("kamon-agent"))
+    .dependsOn(kamonCore % "compile->compile;test->test")
+    .settings(basicSettings: _*)
+    .settings(formatSettings: _*)
+    .settings(packageOptions in (Compile, packageBin) +=
+      Package.ManifestAttributes("Premain-Class" -> "kamon.agent.KamonAgent",
+                                 "Agent-Class" -> "kamon.agent.KamonAgent",
+                                 "Can-Redefine-Classes" -> "true",
+                                 "Can-Retransform-Classes" -> "true"))
+    .settings(libraryDependencies ++=
+      compile(byteBuddy) ++
+        test(scalatest, easyMock, slf4jApi, slf4jnop))
 
   val noPublishing = Seq(publish := (), publishLocal := (), publishArtifact := false)
 }
