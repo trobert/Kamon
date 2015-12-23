@@ -17,8 +17,10 @@
 package akka.kamon.instrumentation
 
 import java.io.ObjectStreamException
+import java.util.concurrent.locks.ReentrantLock
 
 import akka.actor._
+import akka.dispatch.sysmsg.SystemMessage
 import akka.dispatch.{ Envelope, MessageDispatcher }
 import akka.routing.{ RoutedActorRef, RoutedActorCell }
 import kamon.Kamon
@@ -164,14 +166,11 @@ class ActorMetricsInstrumentation(entity: Entity, actorMetrics: ActorMetrics) ex
 
 class FullInstrumentation(entity: Entity, actorMetrics: ActorMetrics) extends ActorMetricsInstrumentation(entity, actorMetrics) {
   override def captureEnvelopeContext(): EnvelopeContext = {
-    println("CAPTURED: " + Tracer.currentContext)
-    /*println((new Throwable).getStackTraceString)*/
     actorMetrics.mailboxSize.increment()
     EnvelopeContext(NanoTimestamp.now, Tracer.currentContext, None)
   }
 
   override def processMessage(pjp: ProceedingJoinPoint, envelopeContext: EnvelopeContext): AnyRef = {
-    println("Processing with: " + envelopeContext.context)
     Tracer.withContext(envelopeContext.context) {
       super.processMessage(pjp, envelopeContext)
     }
@@ -249,7 +248,7 @@ class ActorCellInstrumentation {
   def sendMessageInActorCell(cell: Cell, envelope: Envelope): Unit = {}
 
   @Pointcut("execution(* akka.actor.UnstartedCell.sendMessage(*)) && this(cell) && args(envelope)")
-  def sendMessageInActorCell2(cell: Cell, envelope: Envelope): Unit = {}
+  def sendMessageInUnstartedActorCell(cell: Cell, envelope: Envelope): Unit = {}
 
   @Before("sendMessageInActorCell(cell, envelope)")
   def afterSendMessageInActorCell(cell: Cell, envelope: Envelope): Unit = {
@@ -257,19 +256,49 @@ class ActorCellInstrumentation {
       actorInstrumentation(cell).captureEnvelopeContext())
   }
 
-  @Before("sendMessageInActorCell2(cell, envelope)")
-  def afterSendMessageInActorCell2(cell: Cell, envelope: Envelope): Unit = {
-    println("REPOINTABLE ABOUT TO SEND: " + envelope + " ==== " + Tracer.currentContext)
-
+  @Before("sendMessageInUnstartedActorCell(cell, envelope)")
+  def afterSendMessageInUnstartedActorCell(cell: Cell, envelope: Envelope): Unit = {
     envelope.asInstanceOf[InstrumentedEnvelope].setEnvelopeContext(
       actorInstrumentation(cell).captureEnvelopeContext())
   }
 
-  /*  @Before("sendMessageInActorCell(cell, envelope)")
-  def afterSendMessageInActorCell2(cell: ActorCell, envelope: Envelope): Unit = {
-    envelope.asInstanceOf[InstrumentedEnvelope].setEnvelopeContext(
-      actorInstrumentation(cell).captureEnvelopeContext())
-  }*/
+  @Pointcut("execution(* akka.actor.UnstartedCell.replaceWith(*)) && this(unStartedCell) && args(cell)")
+  def replaceWithInRepointableActorRef(unStartedCell: UnstartedCell, cell: Cell): Unit = {}
+
+  @Around("replaceWithInRepointableActorRef(unStartedCell, cell)")
+  def aroundReplaceWithInRepointableActorRef(pjp: ProceedingJoinPoint, unStartedCell: UnstartedCell, cell: Cell): Unit = {
+    // TODO: Find a way to do this without resorting to reflection.
+    val unstartedCellClass = classOf[UnstartedCell]
+    val queueField = unstartedCellClass.getDeclaredField("akka$actor$UnstartedCell$$queue")
+    queueField.setAccessible(true)
+
+    val lockField = unstartedCellClass.getDeclaredField("lock")
+    lockField.setAccessible(true)
+
+    val queue = queueField.get(unStartedCell).asInstanceOf[java.util.LinkedList[_]]
+    val lock = lockField.get(unStartedCell).asInstanceOf[ReentrantLock]
+
+    def locked[T](body: ⇒ T): T = {
+      lock.lock()
+      try body finally lock.unlock()
+    }
+
+    locked {
+      try {
+        while (!queue.isEmpty) {
+          queue.poll() match {
+            case s: SystemMessage ⇒ cell.sendSystemMessage(s) // TODO: ============= CHECK SYSTEM MESSAGESSSSS =========
+            case e: Envelope with InstrumentedEnvelope ⇒
+              Tracer.withContext(e.envelopeContext().context) {
+                cell.sendMessage(e)
+              }
+          }
+        }
+      } finally {
+        unStartedCell.self.swapCell(cell)
+      }
+    }
+  }
 
   /**
    *
@@ -435,22 +464,4 @@ class TraceContextIntoEnvelopeMixin {
 
   @DeclareMixin("akka.dispatch.Envelope")
   def mixinInstrumentationToEnvelope: InstrumentedEnvelope = InstrumentedEnvelope()
-
-  /*  @DeclareMixin("akka.dispatch.Envelope")
-  def mixinTraceContextAwareToEnvelope: TimestampedTraceContextAware = TimestampedTraceContextAware.default*/
-
-  /*  @DeclareMixin("akka.dispatch.Envelope")
-  def mixinRouterAwareToEnvelope: RouterAwareEnvelope = RouterAwareEnvelope.default*/
-
-  // TODO: THIS PART IS IMPORTANT!!!!
-  /*  @Pointcut("execution(akka.dispatch.Envelope.new(..)) && this(ctx)")
-  def envelopeCreation(ctx: InstrumentedEnvelope): Unit = {}
-
-  @After("envelopeCreation(ctx)")
-  def afterEnvelopeCreation(ctx: InstrumentedEnvelope): Unit = {
-    println(s"${Thread.currentThread().getName} Created ENVELOPE: [${ctx.hashCode()}] $ctx   $ctx => ${ctx.asInstanceOf[InstrumentedEnvelope].envelopeContext()}")
-    // Necessary to force the initialization of ContextAware at the moment of creation.
-    /*ctx.traceContext
-    ctx.routerMetricsRecorder*/
-  }*/
 }
