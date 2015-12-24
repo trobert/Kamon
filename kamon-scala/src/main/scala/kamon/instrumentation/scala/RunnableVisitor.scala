@@ -18,7 +18,7 @@ package kamon.instrumentation.scala
 import net.bytebuddy.asm.ClassVisitorWrapper
 import net.bytebuddy.description.`type`.TypeDescription
 import net.bytebuddy.jar.asm.commons.AdviceAdapter
-import net.bytebuddy.jar.asm.{ClassReader, ClassVisitor, MethodVisitor, Opcodes}
+import net.bytebuddy.jar.asm.{ ClassReader, ClassVisitor, MethodVisitor, Opcodes }
 
 class RunnableVisitor private (typeDescription: TypeDescription) extends ClassVisitorWrapper {
   override def wrap(classVisitor: ClassVisitor): ClassVisitor = RunnableConstructorVisitor(classVisitor, typeDescription)

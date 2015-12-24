@@ -15,12 +15,11 @@
 
 package kamon.jdbc.instrumentation
 
-import java.sql.{ DriverManager, SQLException }
+import java.sql.{DriverManager, SQLException}
 
-import com.typesafe.config.ConfigFactory
-import kamon.jdbc.{ JdbcExtension, JdbcNameGenerator, SqlErrorProcessor, SlowQueryProcessor }
+import kamon.jdbc.{JdbcExtension, JdbcNameGenerator, SlowQueryProcessor, SqlErrorProcessor}
 import kamon.testkit.BaseKamonSpec
-import kamon.trace.{ Tracer, SegmentCategory }
+import kamon.trace.{SegmentCategory, Tracer}
 
 class StatementInstrumentationSpec extends BaseKamonSpec("jdbc-spec") {
   val connection = DriverManager.getConnection("jdbc:h2:mem:jdbc-spec", "SA", "")

@@ -183,6 +183,7 @@ object Projects extends Build {
     .settings(aspectJSettings: _*)
     .settings(
       libraryDependencies ++=
+        compile(byteBuddy) ++
         test(h2,scalatest, akkaTestKit, slf4jApi) ++
         provided(aspectJ))
 
