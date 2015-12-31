@@ -17,9 +17,7 @@ package kamon.agent
 
 import java.lang.instrument.Instrumentation
 
-import net.bytebuddy.agent.builder.AgentBuilder
-import net.bytebuddy.description.`type`.TypeDescription
-import net.bytebuddy.dynamic.DynamicType
+import kamon.PepeInstrumentation
 
 object KamonAgent {
 
@@ -36,27 +34,28 @@ object KamonAgent {
   @throws(classOf[Exception])
   def premain(args: String, instrumentation: Instrumentation): Unit = {
     println(s"premain method invoked with args: $args and inst: $instrumentation")
+    //    new PepeInstrumentation().register(instrumentation)
     InstrumentationLoader.load(instrumentation)
 
-    new AgentBuilder.Default()
-      .withListener(new AgentBuilder.Listener() {
-        override def onError(typeName: String, throwable: Throwable): Unit = {
-          System.out.println("Error - " + typeName + ", " + throwable.getMessage());
-        }
-
-        override def onTransformation(typeDescription: TypeDescription, dynamicType: DynamicType): Unit = {
-          System.out.println("Transformed - " + typeDescription + ", type = " + dynamicType);
-        }
-
-        override def onComplete(typeName: String): Unit = {
-          //          System.out.println("Completed - " + typeName);
-        }
-
-        override def onIgnored(typeDescription: TypeDescription): Unit = {
-          //          System.out.println("Ignored - " + typeDescription);
-        }
-      })
-      .installOn(instrumentation)
+    //    new AgentBuilder.Default()
+    //      .withListener(new AgentBuilder.Listener() {
+    //        override def onError(typeName: String, throwable: Throwable): Unit = {
+    //          System.out.println("Error - " + typeName + ", " + throwable.getMessage());
+    //        }
+    //
+    //        override def onTransformation(typeDescription: TypeDescription, dynamicType: DynamicType): Unit = {
+    //          System.out.println("Transformed - " + typeDescription + ", type = " + dynamicType);
+    //        }
+    //
+    //        override def onComplete(typeName: String): Unit = {
+    //                    System.out.println("Completed - " + typeName);
+    //        }
+    //
+    //        override def onIgnored(typeDescription: TypeDescription): Unit = {
+    //                    System.out.println("Ignored - " + typeDescription);
+    //        }
+    //      })
+    //      .installOn(instrumentation)
   }
   /**
    * JVM hook to dynamically load javaagent at runtime.

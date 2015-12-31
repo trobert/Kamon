@@ -124,7 +124,7 @@ object LevelOfDetail {
 }
 
 trait TraceContextAware extends Serializable {
-  def traceContext: TraceContext
+  def traceContext(): TraceContext
 }
 
 object TraceContextAware {

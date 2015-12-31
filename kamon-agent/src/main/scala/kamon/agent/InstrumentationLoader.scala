@@ -19,6 +19,7 @@ import java.lang.instrument.Instrumentation
 
 import com.typesafe.config.ConfigFactory
 import kamon.util.instrumentation.KamonInstrumentation
+
 import scala.collection.JavaConverters._
 
 object InstrumentationLoader {
